@@ -180,7 +180,7 @@ async function loginToGoogle(page) {
   
   try {
     log("Переход на страницу авторизации Google");
-    await page.goto("https://accounts.google.com/", { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto("https://accounts.google.com/", { waitUntil: "networkidle2", timeout: 20000 });
     
     // Вводим email
     log("Ожидание поля email...");
@@ -199,7 +199,7 @@ async function loginToGoogle(page) {
     
     // Ждем завершения логина
     log("Ожидание завершения авторизации...");
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
     
     // Дополнительное ожидание после логина
     await page.waitForTimeout(3000);
@@ -221,10 +221,10 @@ async function getDomainReputation(page, domain, index, total) {
     
     const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
     log(`[${index + 1}/${total}] Переход на страницу репутации...`);
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
     
     // Дополнительное ожидание для загрузки динамического контента
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(3000);
     
     log(`[${index + 1}/${total}] Ожидание загрузки данных...`);
     
@@ -274,8 +274,13 @@ async function getDomainReputation(page, domain, index, total) {
 // Главный endpoint
 app.get("/check-all-domains", async (req, res) => {
   const requestStartTime = Date.now();
+  
+  // Параметры для батчей
+  const start = parseInt(req.query.start) || 0;
+  const limit = parseInt(req.query.limit) || 30; // По умолчанию 30 доменов
+  
   log("════════════════════════════════════════════════", "START");
-  log("Получен запрос на проверку всех доменов", "START");
+  log(`Получен запрос на проверку доменов (start=${start}, limit=${limit})`, "START");
   log("════════════════════════════════════════════════", "START");
   
   let browser;
@@ -309,15 +314,23 @@ app.get("/check-all-domains", async (req, res) => {
     // Логинимся
     await loginToGoogle(page);
     
-    // Используем захардкоженный список доменов
-    const domains = DOMAINS_LIST;
-    log(`Используем список из ${domains.length} доменов`, "INFO");
+    // Получаем батч доменов
+    const allDomains = DOMAINS_LIST;
+    const domains = allDomains.slice(start, start + limit);
+    
+    log(`Всего доменов в списке: ${allDomains.length}`, "INFO");
+    log(`Проверяем батч: ${start}-${start + domains.length - 1} (${domains.length} доменов)`, "INFO");
     
     if (domains.length === 0) {
-      log("Список доменов пуст", "WARNING");
-      log(`Общее время выполнения: ${((Date.now() - requestStartTime) / 1000).toFixed(2)}s`, "INFO");
+      log("Нет доменов для проверки в этом батче", "WARNING");
       return res.status(200).json({
         timestamp: new Date().toISOString(),
+        batch: {
+          start: start,
+          limit: limit,
+          total: allDomains.length,
+          processed: 0
+        },
         domains: []
       });
     }
@@ -356,8 +369,20 @@ app.get("/check-all-domains", async (req, res) => {
     log(`Запрос завершен за ${totalElapsed}s`, "SUCCESS");
     log("════════════════════════════════════════════════", "SUCCESS");
     
+    // Информация о следующем батче
+    const nextStart = start + limit;
+    const hasMore = nextStart < allDomains.length;
+    
     res.status(200).json({
       timestamp: new Date().toISOString(),
+      batch: {
+        start: start,
+        limit: limit,
+        total: allDomains.length,
+        processed: domains.length,
+        nextStart: hasMore ? nextStart : null,
+        hasMore: hasMore
+      },
       domains: results,
       stats: {
         total: domains.length,
@@ -417,8 +442,14 @@ app.listen(PORT, () => {
   log(`Доменов в списке: ${DOMAINS_LIST.length}`, "INFO");
   log(`Node.js версия: ${process.version}`, "INFO");
   log("Endpoints:", "INFO");
-  log("  GET /check-all-domains - проверка всех доменов", "INFO");
-  log("  GET /domains - список доменов", "INFO");
+  log("  GET /check-all-domains?start=0&limit=30 - проверка батча доменов", "INFO");
+  log("  GET /domains - список всех доменов", "INFO");
   log("  GET /health - health check", "INFO");
+  log("", "INFO");
+  log("Примеры использования:", "INFO");
+  log("  Батч 1: /check-all-domains?start=0&limit=30", "INFO");
+  log("  Батч 2: /check-all-domains?start=30&limit=30", "INFO");
+  log("  Батч 3: /check-all-domains?start=60&limit=30", "INFO");
+  log(`  Всего батчей: ${Math.ceil(DOMAINS_LIST.length / 30)}`, "INFO");
   log("════════════════════════════════════════════════", "START");
 });
