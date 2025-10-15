@@ -199,7 +199,7 @@ async function loginToGoogle(page) {
     
     // Ждем завершения логина
     log("Ожидание завершения авторизации...");
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
     
     // Дополнительное ожидание после логина
     await page.waitForTimeout(6000);
