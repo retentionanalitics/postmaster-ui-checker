@@ -306,6 +306,75 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Debug endpoint - показывает что на странице
+app.get("/debug", async (req, res) => {
+  log("════════════════════════════════════════════════", "START");
+  log("DEBUG: Проверяем что происходит на странице", "START");
+  log("════════════════════════════════════════════════", "START");
+  
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox", 
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled"
+      ]
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    
+    // Логинимся
+    await loginToGoogle(page);
+    
+    // Переходим на страницу доменов
+    log("Переход на /managedomains");
+    await page.goto("https://postmaster.google.com/managedomains", { 
+      waitUntil: "networkidle2",
+      timeout: 60000 
+    });
+    
+    await page.waitForTimeout(5000);
+    
+    // Получаем HTML страницы
+    const html = await page.content();
+    
+    // Проверяем наличие разных элементов
+    const pageInfo = await page.evaluate(() => {
+      return {
+        title: document.title,
+        hasTables: document.querySelectorAll('table').length,
+        hasRows: document.querySelectorAll('tr').length,
+        bodyText: document.body.innerText.substring(0, 500),
+        allSelectors: {
+          tables: document.querySelectorAll('table').length,
+          divs: document.querySelectorAll('div').length,
+          spans: document.querySelectorAll('span').length
+        }
+      };
+    });
+    
+    log(`Найдено таблиц: ${pageInfo.hasTables}`, "INFO");
+    log(`Найдено строк: ${pageInfo.hasRows}`, "INFO");
+    
+    res.status(200).json({
+      pageInfo,
+      htmlPreview: html.substring(0, 2000) // Первые 2000 символов HTML
+    });
+    
+  } catch (error) {
+    log(`Ошибка в debug: ${error.message}`, "ERROR");
+    res.status(500).json({ error: error.message });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   log("════════════════════════════════════════════════", "START");
