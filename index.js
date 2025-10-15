@@ -27,21 +27,6 @@ function log(message, level = "INFO") {
   console.log(`[${timestamp}] ${emoji} ${message}`);
 }
 
-// Функция для логирования с timestamp
-function log(message, level = "INFO") {
-  const timestamp = new Date().toISOString();
-  const emoji = {
-    INFO: "ℹ️",
-    SUCCESS: "✅",
-    ERROR: "❌",
-    WARNING: "⚠️",
-    START: "🚀",
-    PROCESS: "⚙️"
-  }[level] || "📝";
-  
-  console.log(`[${timestamp}] ${emoji} ${message}`);
-}
-
 // Функция логина в Google
 async function loginToGoogle(page) {
   const startTime = Date.now();
@@ -61,7 +46,7 @@ async function loginToGoogle(page) {
     // Ждем поле пароля
     log("Ожидание поля пароля...");
     await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
-    await page.waitForTimeout(1000); // Дополнительная пауза
+    await page.waitForTimeout(1000);
     log("Ввод пароля...");
     await page.type('input[type="password"]', GOOGLE_PASSWORD, { delay: 100 });
     await page.click("#passwordNext");
@@ -106,7 +91,7 @@ async function getDomainsList(page) {
       
       gridCells.forEach(cell => {
         const domain = cell.getAttribute('id') || cell.getAttribute('data-is-reader');
-        if (domain && domain.includes('.')) { // Проверяем что это домен
+        if (domain && domain.includes('.')) {
           domainList.push(domain);
         }
       });
@@ -313,173 +298,6 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
-});
-
-// Debug endpoint - показывает что на странице
-app.get("/debug", async (req, res) => {
-  log("════════════════════════════════════════════════", "START");
-  log("DEBUG: Проверяем что происходит на странице", "START");
-  log("════════════════════════════════════════════════", "START");
-  
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        "--no-sandbox", 
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled"
-      ]
-    });
-    
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-    
-    // Логинимся
-    await loginToGoogle(page);
-    
-    // Переходим на страницу доменов
-    log("Переход на /managedomains");
-    await page.goto("https://postmaster.google.com/managedomains", { 
-      waitUntil: "networkidle2",
-      timeout: 60000 
-    });
-    
-    await page.waitForTimeout(5000);
-    
-    // Получаем HTML страницы
-    const html = await page.content();
-    
-    // Проверяем наличие разных элементов
-    const pageInfo = await page.evaluate(() => {
-      const grids = document.querySelectorAll('div[role="grid"]');
-      const gridCells = document.querySelectorAll('div[role="gridcell"][data-is-reader]');
-      
-      const domains = [];
-      gridCells.forEach(cell => {
-        const domain = cell.getAttribute('id') || cell.getAttribute('data-is-reader');
-        if (domain) domains.push(domain);
-      });
-      
-      return {
-        title: document.title,
-        hasTables: document.querySelectorAll('table').length,
-        hasGrids: grids.length,
-        gridCells: gridCells.length,
-        domains: domains,
-        bodyText: document.body.innerText.substring(0, 500)
-      };
-    });
-    
-    log(`Найдено грид элементов: ${pageInfo.hasGrids}`, "INFO");
-    log(`Найдено доменов: ${pageInfo.domains.length}`, "INFO");
-    
-    res.status(200).json({
-      pageInfo,
-      htmlPreview: html.substring(0, 2000)
-    });
-    
-  } catch (error) {
-    log(`Ошибка в debug: ${error.message}`, "ERROR");
-    res.status(500).json({ error: error.message });
-  } finally {
-    if (browser) await browser.close();
-  }
-});
-
-// Debug endpoint для страницы репутации
-app.get("/debug-reputation", async (req, res) => {
-  const domain = req.query.domain || 'mgn.1win.mx'; // Дефолтный домен
-  
-  log("════════════════════════════════════════════════", "START");
-  log(`DEBUG REPUTATION: Проверяем страницу репутации для ${domain}`, "START");
-  log("════════════════════════════════════════════════", "START");
-  
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        "--no-sandbox", 
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled"
-      ]
-    });
-    
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-    
-    // Логинимся
-    await loginToGoogle(page);
-    
-    // Переходим на страницу репутации
-    const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
-    log(`Переход на ${url}`);
-    await page.goto(url, { 
-      waitUntil: "networkidle2",
-      timeout: 60000 
-    });
-    
-    await page.waitForTimeout(5000);
-    
-    // Проверяем структуру страницы
-    const pageInfo = await page.evaluate(() => {
-      const tables = document.querySelectorAll('table');
-      const grids = document.querySelectorAll('div[role="grid"]');
-      const gridCells = document.querySelectorAll('div[role="gridcell"]');
-      
-      const tableData = [];
-      tables.forEach((table, idx) => {
-        const rows = table.querySelectorAll('tr');
-        const cells = table.querySelectorAll('td');
-        tableData.push({
-          index: idx,
-          rows: rows.length,
-          cells: cells.length,
-          firstCellText: cells[0]?.innerText || 'N/A',
-          lastCellText: cells[cells.length - 1]?.innerText || 'N/A'
-        });
-      });
-      
-      const gridData = [];
-      gridCells.forEach((cell, idx) => {
-        if (idx < 10) { // Первые 10 ячеек
-          gridData.push({
-            index: idx,
-            text: cell.innerText,
-            role: cell.getAttribute('role')
-          });
-        }
-      });
-      
-      return {
-        title: document.title,
-        hasTables: tables.length,
-        hasGrids: grids.length,
-        hasGridCells: gridCells.length,
-        tableData: tableData,
-        gridData: gridData,
-        bodyText: document.body.innerText.substring(0, 1000)
-      };
-    });
-    
-    log(`Найдено таблиц: ${pageInfo.hasTables}`, "INFO");
-    log(`Найдено grid элементов: ${pageInfo.hasGrids}`, "INFO");
-    
-    res.status(200).json(pageInfo);
-    
-  } catch (error) {
-    log(`Ошибка в debug-reputation: ${error.message}`, "ERROR");
-    res.status(500).json({ error: error.message });
-  } finally {
-    if (browser) await browser.close();
-  }
 });
 
 const PORT = process.env.PORT || 8080;
