@@ -98,43 +98,35 @@ async function getDomainReputation(page, domain, index, total) {
     const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
     await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
     
-    let reputation = null;
-    let attempts = 0;
-    const maxAttempts = 5;
+    // Ждем 8 секунд для загрузки данных (вместо 3)
+    await page.waitForTimeout(8000);
     
-    while (attempts < maxAttempts && !reputation) {
-      await page.waitForTimeout(3000);
-      attempts++;
-      
-      reputation = await page.evaluate(() => {
-        const noDataDiv = document.querySelector('.W-X-m');
-        if (noDataDiv && noDataDiv.innerText.includes('No data to display')) {
-          return null;
-        }
-        
-        const table = document.querySelector('table.google-visualization-table-table');
-        if (!table) return null;
-        
-        const rows = table.querySelectorAll('tbody tr');
-        if (rows.length === 0) return null;
-        
-        const firstRow = rows[0];
-        const cells = firstRow.querySelectorAll('td');
-        
-        if (cells.length < 2) return null;
-        
-        const reputationCell = cells[cells.length - 1];
-        const text = reputationCell.innerText.trim();
-        
-        if (text && text.length > 0 && isNaN(text)) {
-          return text;
-        }
-        
+    const reputation = await page.evaluate(() => {
+      const noDataDiv = document.querySelector('.W-X-m');
+      if (noDataDiv && noDataDiv.innerText.includes('No data to display')) {
         return null;
-      });
+      }
       
-      if (reputation) break;
-    }
+      const table = document.querySelector('table.google-visualization-table-table');
+      if (!table) return null;
+      
+      const rows = table.querySelectorAll('tbody tr');
+      if (rows.length === 0) return null;
+      
+      const firstRow = rows[0];
+      const cells = firstRow.querySelectorAll('td');
+      
+      if (cells.length < 2) return null;
+      
+      const reputationCell = cells[cells.length - 1];
+      const text = reputationCell.innerText.trim();
+      
+      if (text && text.length > 0 && isNaN(text)) {
+        return text;
+      }
+      
+      return null;
+    });
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     
