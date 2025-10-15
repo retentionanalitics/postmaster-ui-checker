@@ -49,25 +49,29 @@ async function loginToGoogle(page) {
   
   try {
     log("Переход на страницу авторизации Google");
-    await page.goto("https://accounts.google.com/", { waitUntil: "networkidle2" });
+    await page.goto("https://accounts.google.com/", { waitUntil: "networkidle2", timeout: 60000 });
     
     // Вводим email
     log("Ожидание поля email...");
-    await page.waitForSelector('input[type="email"]', { timeout: 10000 });
+    await page.waitForSelector('input[type="email"]', { timeout: 15000 });
     log(`Ввод email: ${GOOGLE_EMAIL}`);
-    await page.type('input[type="email"]', GOOGLE_EMAIL);
+    await page.type('input[type="email"]', GOOGLE_EMAIL, { delay: 100 });
     await page.click("#identifierNext");
     
     // Ждем поле пароля
     log("Ожидание поля пароля...");
-    await page.waitForSelector('input[type="password"]', { visible: true, timeout: 10000 });
+    await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
+    await page.waitForTimeout(1000); // Дополнительная пауза
     log("Ввод пароля...");
-    await page.type('input[type="password"]', GOOGLE_PASSWORD);
+    await page.type('input[type="password"]', GOOGLE_PASSWORD, { delay: 100 });
     await page.click("#passwordNext");
     
     // Ждем завершения логина
     log("Ожидание завершения авторизации...");
-    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+    
+    // Дополнительное ожидание после логина
+    await page.waitForTimeout(3000);
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     log(`Логин успешен (${elapsed}s)`, "SUCCESS");
@@ -86,12 +90,15 @@ async function getDomainsList(page) {
     log("Переход на страницу /managedomains");
     await page.goto("https://postmaster.google.com/managedomains", { 
       waitUntil: "networkidle2",
-      timeout: 30000 
+      timeout: 60000 
     });
     
-    // Ждем таблицу с доменами
+    // Дополнительное ожидание для загрузки Google Apps
+    await page.waitForTimeout(5000);
+    
+    // Ждем таблицу с доменами (увеличенный таймаут)
     log("Ожидание загрузки таблицы с доменами...");
-    await page.waitForSelector("table", { timeout: 15000 });
+    await page.waitForSelector("table", { timeout: 30000 });
     
     const domains = await page.evaluate(() => {
       const rows = document.querySelectorAll("table tbody tr");
@@ -133,11 +140,14 @@ async function getDomainReputation(page, domain, index, total) {
     
     const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
     log(`[${index + 1}/${total}] Переход на страницу репутации...`);
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
     
-    // Ждем таблицу с репутацией
+    // Дополнительное ожидание для загрузки динамического контента
+    await page.waitForTimeout(5000);
+    
+    // Ждем таблицу с репутацией (увеличенный таймаут)
     log(`[${index + 1}/${total}] Ожидание загрузки данных...`);
-    await page.waitForSelector("table", { timeout: 15000 });
+    await page.waitForSelector("table", { timeout: 30000 });
     
     const reputation = await page.evaluate(() => {
       const table = document.querySelector("table");
@@ -194,8 +204,11 @@ app.get("/check-all-domains", async (req, res) => {
     
     const page = await browser.newPage();
     
+    // Устанавливаем размер viewport (как настоящий браузер)
+    await page.setViewport({ width: 1920, height: 1080 });
+    
     // Устанавливаем User-Agent
-    log("Настройка браузера (User-Agent)...");
+    log("Настройка браузера (User-Agent, viewport)...");
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
