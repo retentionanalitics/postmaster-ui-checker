@@ -1,0 +1,16 @@
+{
+  "name": "postmaster-checker",
+  "version": "2.0.0",
+  "description": "Google Postmaster Tools reputation checker",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer": "^21.11.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
