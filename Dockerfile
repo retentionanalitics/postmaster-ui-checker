@@ -29,17 +29,21 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Копируем package.json и устанавливаем зависимости
+# Копируем package.json СНАЧАЛА для кеширования слоя с зависимостями
 COPY package.json ./
-RUN npm install
 
-# Копируем остальные файлы
+# Устанавливаем зависимости
+RUN npm install --omit=dev
+
+# Копируем остальные файлы ПОСЛЕ установки зависимостей
 COPY . .
 
-# ENV переменные (можно переопределить при запуске)
+# ENV переменные
 ENV GOOGLE_EMAIL=postmstrwin@gmail.com
 ENV GOOGLE_PASSWORD="j,7UJ=V96;#zi6,mg~5AX&s!"
 ENV PORT=8080
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 EXPOSE 8080
 
