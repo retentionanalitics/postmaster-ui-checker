@@ -7,6 +7,152 @@ const app = express();
 const GOOGLE_EMAIL = process.env.GOOGLE_EMAIL;
 const GOOGLE_PASSWORD = process.env.GOOGLE_PASSWORD;
 
+// Список доменов для проверки (можно обновлять вручную)
+const DOMAINS_LIST = [
+  "mgn.1win.mx",
+  "mg1.1win.mx",
+  "mgn.1win.ng",
+  "mg2.1win.mx",
+  "mg3.1win.mx",
+  "mg2.1win.ng",
+  "mg3.1win.ng",
+  "mg.1win-mail-30.com",
+  "mg.1wpartners-serv.com",
+  "mg.1w-usmailing.com",
+  "mg.1w-mailsender.com",
+  "mg.1win-smtpconnect.com",
+  "mg.1win-smtpsndr.com",
+  "mg1.1win.ng",
+  "mg2.1win-mailing.com",
+  "mg3.1win-mailing.com",
+  "mg.1win-mail-24.com",
+  "mg.1win-mail-25.com",
+  "mg.1win-mail-26.com",
+  "mg.1win-mail-27.com",
+  "mg.1win-mail-28.com",
+  "mg.1win-mail-29.com",
+  "topx.one",
+  "sending.topx.one",
+  "mg.1win-mail-21.com",
+  "mg.1win-mail-22.com",
+  "mg.1win.xyz",
+  "1win-nws.com",
+  "1w-auth.com",
+  "1w-codesender.com",
+  "1w-codesndr.com",
+  "1w-otpsender.com",
+  "1w-otpsndr.com",
+  "1win-codesender.com",
+  "1win-codesndr.com",
+  "1win-dgst.com",
+  "1win-dgsteml.com",
+  "1win-emlcdp.com",
+  "1win-emlsender.com",
+  "1win-emlsndr.com",
+  "1win-emsender.com",
+  "1win-emsndr.com",
+  "1win-nwseml.com",
+  "1win-nwslttr.com",
+  "1win-otpsender.com",
+  "1win-otpsndr.com",
+  "1win-smtp.com",
+  "1win-smtpeml.com",
+  "1win-trig.com",
+  "1win-trigeml.com",
+  "1winmx-eml.com",
+  "1winmx-eml1.com",
+  "1winmx-eml2.com",
+  "1winng-eml.com",
+  "1winng-eml1.com",
+  "1winng-eml2.com",
+  "1win.cash",
+  "1win-sender.com",
+  "cdp.1w-sender.com",
+  "mg.1win-sender.com",
+  "mg.1winin-inbox.com",
+  "mg.1win-trigeml.com",
+  "mg.1winng-eml.com",
+  "mg.1winng-eml1.com",
+  "1win-mailing.com",
+  "uo1.1w-mailer.com",
+  "1win-smtpsender.com",
+  "1w-mailer.com",
+  "uo1.1win-smtpsender.com",
+  "1w-partners.com",
+  "partners1w.com",
+  "partners-1w.com",
+  "mg.1w-partners.com",
+  "mg.partners1w.com",
+  "mg.partners-1w.com",
+  "1win-verification.com",
+  "1win-verify.com",
+  "mg.1win-verification.com",
+  "mg.1win-verify.com",
+  "providers-terms.com",
+  "mg.1win-emlsender.com",
+  "mg.1win-smtpeml.com",
+  "1wgamer.com",
+  "cdp.1wgamer.com",
+  "mg.1wgamer.com",
+  "mg2.1w-codesender.com",
+  "mg.1w-codesender.com",
+  "mg.1w-codesndr.com",
+  "mg2.1win-nwseml.com",
+  "1w-sender.com",
+  "mg.1win-smtp.com",
+  "1w-letters.com",
+  "mg.1win-emlcdp.com",
+  "mg.1w-letters.com",
+  "sg.1win-smtpsender.com",
+  "sg.1w-mailer.com",
+  "mg.1win-emsender.com",
+  "1wpartners-email.com",
+  "mg.1wpartners-mail.com",
+  "mg.1wpartners-email.com",
+  "1wpartners-mail.com",
+  "1wpartner.com",
+  "mg.1wpartner.com",
+  "1wpartners-serv.com",
+  "us.1wpartners-serv.com",
+  "1win-mailer.com",
+  "1win-mailsndr.com",
+  "mg.1win-mailer.com",
+  "mg.1win-mailsndr.com",
+  "1w-usmailing.com",
+  "1wmailer-us.com",
+  "1w-usemail.com",
+  "1w-mailus.com",
+  "1winmail-us.com",
+  "1w-usmail.com",
+  "1w-eml.com",
+  "1w-send.com",
+  "1w-post.com",
+  "1winforce.com",
+  "1w-mailing.com",
+  "mg.1w-otpsndr.com",
+  "mg.1win-dgst.com",
+  "mg.1win-dgsteml.com",
+  "mg.1w-eml.com",
+  "mg.1w-send.com",
+  "mg.1w-post.com",
+  "mg.1winforce.com",
+  "mg.1w-mailing.com",
+  "vip-1win.com",
+  "vip-1win.io",
+  "1win-vipclub.com",
+  "1win-vipclub.io",
+  "vipclub-1win.com",
+  "vipclub-1win.io",
+  "1winteam.io",
+  "mg.1win-trig.com",
+  "1win-mailbox.com",
+  "mg.1win-mailbox.com",
+  "sg.1w-sender.com",
+  "mg.1win-emsndr.com",
+  "1win-sendmail.com",
+  "1win-smtpsndr.com"
+];
+
 if (!GOOGLE_EMAIL || !GOOGLE_PASSWORD) {
   console.error("❌ Не указаны GOOGLE_EMAIL или GOOGLE_PASSWORD в ENV");
   process.exit(1);
@@ -62,53 +208,6 @@ async function loginToGoogle(page) {
     log(`Логин успешен (${elapsed}s)`, "SUCCESS");
   } catch (error) {
     log(`Ошибка при логине: ${error.message}`, "ERROR");
-    throw error;
-  }
-}
-
-// Функция получения списка доменов
-async function getDomainsList(page) {
-  const startTime = Date.now();
-  log("Получение списка доменов...", "START");
-  
-  try {
-    log("Переход на страницу /managedomains");
-    await page.goto("https://postmaster.google.com/managedomains", { 
-      waitUntil: "networkidle2",
-      timeout: 60000 
-    });
-    
-    // Дополнительное ожидание для загрузки Google Apps
-    await page.waitForTimeout(5000);
-    
-    // Ждем grid с доменами (НЕ таблицу!)
-    log("Ожидание загрузки списка доменов...");
-    await page.waitForSelector('div[role="grid"]', { timeout: 30000 });
-    
-    const domains = await page.evaluate(() => {
-      const gridCells = document.querySelectorAll('div[role="gridcell"][data-is-reader]');
-      const domainList = [];
-      
-      gridCells.forEach(cell => {
-        const domain = cell.getAttribute('id') || cell.getAttribute('data-is-reader');
-        if (domain && domain.includes('.')) {
-          domainList.push(domain);
-        }
-      });
-      
-      return domainList;
-    });
-    
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    log(`Найдено доменов: ${domains.length} (${elapsed}s)`, "SUCCESS");
-    
-    if (domains.length > 0) {
-      log(`Список доменов: ${domains.slice(0, 5).join(", ")}${domains.length > 5 ? "..." : ""}`);
-    }
-    
-    return domains;
-  } catch (error) {
-    log(`Ошибка при получении списка доменов: ${error.message}`, "ERROR");
     throw error;
   }
 }
@@ -210,11 +309,12 @@ app.get("/check-all-domains", async (req, res) => {
     // Логинимся
     await loginToGoogle(page);
     
-    // Получаем список доменов
-    const domains = await getDomainsList(page);
+    // Используем захардкоженный список доменов
+    const domains = DOMAINS_LIST;
+    log(`Используем список из ${domains.length} доменов`, "INFO");
     
     if (domains.length === 0) {
-      log("Не найдено ни одного домена", "WARNING");
+      log("Список доменов пуст", "WARNING");
       log(`Общее время выполнения: ${((Date.now() - requestStartTime) / 1000).toFixed(2)}s`, "INFO");
       return res.status(200).json({
         timestamp: new Date().toISOString(),
@@ -300,14 +400,25 @@ app.get("/health", (req, res) => {
   });
 });
 
+// Получить список доменов
+app.get("/domains", (req, res) => {
+  log("Запрос списка доменов", "INFO");
+  res.status(200).json({ 
+    domains: DOMAINS_LIST,
+    total: DOMAINS_LIST.length
+  });
+});
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   log("════════════════════════════════════════════════", "START");
   log(`Сервер запущен на порту ${PORT}`, "START");
   log(`Email аккаунта: ${GOOGLE_EMAIL}`, "INFO");
+  log(`Доменов в списке: ${DOMAINS_LIST.length}`, "INFO");
   log(`Node.js версия: ${process.version}`, "INFO");
   log("Endpoints:", "INFO");
   log("  GET /check-all-domains - проверка всех доменов", "INFO");
+  log("  GET /domains - список доменов", "INFO");
   log("  GET /health - health check", "INFO");
   log("════════════════════════════════════════════════", "START");
 });
