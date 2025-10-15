@@ -223,36 +223,57 @@ async function getDomainReputation(page, domain, index, total) {
     log(`[${index + 1}/${total}] Переход на страницу репутации...`);
     await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
     
-    // Дополнительное ожидание для загрузки динамического контента
-    await page.waitForTimeout(3000);
-    
     log(`[${index + 1}/${total}] Ожидание загрузки данных...`);
     
-    const reputation = await page.evaluate(() => {
-      // Проверяем нет ли сообщения "No data to display"
-      const noDataDiv = document.querySelector('.W-X-m');
-      if (noDataDiv && noDataDiv.innerText.includes('No data to display')) {
+    // Ждем загрузку таблицы с данными (до 15 секунд)
+    let reputation = null;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    while (attempts < maxAttempts && !reputation) {
+      await page.waitForTimeout(3000); // Ждем 3 секунды
+      attempts++;
+      
+      log(`[${index + 1}/${total}] Попытка ${attempts}/${maxAttempts} получить данные...`);
+      
+      reputation = await page.evaluate(() => {
+        // Проверяем нет ли сообщения "No data to display"
+        const noDataDiv = document.querySelector('.W-X-m');
+        if (noDataDiv && noDataDiv.innerText.includes('No data to display')) {
+          return null;
+        }
+        
+        // Ищем таблицу с репутацией
+        const table = document.querySelector('table.google-visualization-table-table');
+        if (!table) return null;
+        
+        // Ищем строки таблицы
+        const rows = table.querySelectorAll('tbody tr');
+        if (rows.length === 0) return null;
+        
+        // Берем ПЕРВУЮ строку (самая свежая дата)
+        const firstRow = rows[0];
+        const cells = firstRow.querySelectorAll('td');
+        
+        if (cells.length < 2) return null;
+        
+        // Последняя ячейка - это репутация
+        const reputationCell = cells[cells.length - 1];
+        const text = reputationCell.innerText.trim();
+        
+        // Проверяем что это не пустая строка и не просто число
+        if (text && text.length > 0 && isNaN(text)) {
+          return text;
+        }
+        
         return null;
+      });
+      
+      if (reputation) {
+        log(`[${index + 1}/${total}] Данные получены на попытке ${attempts}`, "SUCCESS");
+        break;
       }
-      
-      // Ищем таблицу с репутацией
-      const table = document.querySelector('table.google-visualization-table-table');
-      if (!table) return null;
-      
-      // Ищем строки таблицы
-      const rows = table.querySelectorAll('tbody tr');
-      if (rows.length === 0) return null;
-      
-      // Берем ПЕРВУЮ строку (самая свежая дата)
-      const firstRow = rows[0];
-      const cells = firstRow.querySelectorAll('td');
-      
-      if (cells.length < 2) return null;
-      
-      // Последняя ячейка - это репутация
-      const reputationCell = cells[cells.length - 1];
-      return reputationCell.innerText.trim();
-    });
+    }
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     
