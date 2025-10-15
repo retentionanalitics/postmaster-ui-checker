@@ -96,21 +96,18 @@ async function getDomainsList(page) {
     // Дополнительное ожидание для загрузки Google Apps
     await page.waitForTimeout(5000);
     
-    // Ждем таблицу с доменами (увеличенный таймаут)
-    log("Ожидание загрузки таблицы с доменами...");
-    await page.waitForSelector("table", { timeout: 30000 });
+    // Ждем grid с доменами (НЕ таблицу!)
+    log("Ожидание загрузки списка доменов...");
+    await page.waitForSelector('div[role="grid"]', { timeout: 30000 });
     
     const domains = await page.evaluate(() => {
-      const rows = document.querySelectorAll("table tbody tr");
+      const gridCells = document.querySelectorAll('div[role="gridcell"][data-is-reader]');
       const domainList = [];
       
-      rows.forEach(row => {
-        const domainCell = row.querySelector("td:first-child");
-        if (domainCell) {
-          const domain = domainCell.innerText.trim();
-          if (domain) {
-            domainList.push(domain);
-          }
+      gridCells.forEach(cell => {
+        const domain = cell.getAttribute('id') || cell.getAttribute('data-is-reader');
+        if (domain && domain.includes('.')) { // Проверяем что это домен
+          domainList.push(domain);
         }
       });
       
@@ -145,20 +142,32 @@ async function getDomainReputation(page, domain, index, total) {
     // Дополнительное ожидание для загрузки динамического контента
     await page.waitForTimeout(5000);
     
-    // Ждем таблицу с репутацией (увеличенный таймаут)
     log(`[${index + 1}/${total}] Ожидание загрузки данных...`);
-    await page.waitForSelector("table", { timeout: 30000 });
     
     const reputation = await page.evaluate(() => {
-      const table = document.querySelector("table");
+      // Проверяем нет ли сообщения "No data to display"
+      const noDataDiv = document.querySelector('.W-X-m');
+      if (noDataDiv && noDataDiv.innerText.includes('No data to display')) {
+        return null;
+      }
+      
+      // Ищем таблицу с репутацией
+      const table = document.querySelector('table.google-visualization-table-table');
       if (!table) return null;
       
-      const rows = table.querySelectorAll("tbody tr");
+      // Ищем строки таблицы
+      const rows = table.querySelectorAll('tbody tr');
       if (rows.length === 0) return null;
       
-      // Берем последнюю ячейку первой строки (самая свежая репутация)
-      const firstCell = rows[0].querySelector("td:last-child");
-      return firstCell ? firstCell.innerText.trim() : null;
+      // Берем ПЕРВУЮ строку (самая свежая дата)
+      const firstRow = rows[0];
+      const cells = firstRow.querySelectorAll('td');
+      
+      if (cells.length < 2) return null;
+      
+      // Последняя ячейка - это репутация
+      const reputationCell = cells[cells.length - 1];
+      return reputationCell.innerText.trim();
     });
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -346,29 +355,127 @@ app.get("/debug", async (req, res) => {
     
     // Проверяем наличие разных элементов
     const pageInfo = await page.evaluate(() => {
+      const grids = document.querySelectorAll('div[role="grid"]');
+      const gridCells = document.querySelectorAll('div[role="gridcell"][data-is-reader]');
+      
+      const domains = [];
+      gridCells.forEach(cell => {
+        const domain = cell.getAttribute('id') || cell.getAttribute('data-is-reader');
+        if (domain) domains.push(domain);
+      });
+      
       return {
         title: document.title,
         hasTables: document.querySelectorAll('table').length,
-        hasRows: document.querySelectorAll('tr').length,
-        bodyText: document.body.innerText.substring(0, 500),
-        allSelectors: {
-          tables: document.querySelectorAll('table').length,
-          divs: document.querySelectorAll('div').length,
-          spans: document.querySelectorAll('span').length
-        }
+        hasGrids: grids.length,
+        gridCells: gridCells.length,
+        domains: domains,
+        bodyText: document.body.innerText.substring(0, 500)
       };
     });
     
-    log(`Найдено таблиц: ${pageInfo.hasTables}`, "INFO");
-    log(`Найдено строк: ${pageInfo.hasRows}`, "INFO");
+    log(`Найдено грид элементов: ${pageInfo.hasGrids}`, "INFO");
+    log(`Найдено доменов: ${pageInfo.domains.length}`, "INFO");
     
     res.status(200).json({
       pageInfo,
-      htmlPreview: html.substring(0, 2000) // Первые 2000 символов HTML
+      htmlPreview: html.substring(0, 2000)
     });
     
   } catch (error) {
     log(`Ошибка в debug: ${error.message}`, "ERROR");
+    res.status(500).json({ error: error.message });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+// Debug endpoint для страницы репутации
+app.get("/debug-reputation", async (req, res) => {
+  const domain = req.query.domain || 'mgn.1win.mx'; // Дефолтный домен
+  
+  log("════════════════════════════════════════════════", "START");
+  log(`DEBUG REPUTATION: Проверяем страницу репутации для ${domain}`, "START");
+  log("════════════════════════════════════════════════", "START");
+  
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox", 
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled"
+      ]
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    
+    // Логинимся
+    await loginToGoogle(page);
+    
+    // Переходим на страницу репутации
+    const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
+    log(`Переход на ${url}`);
+    await page.goto(url, { 
+      waitUntil: "networkidle2",
+      timeout: 60000 
+    });
+    
+    await page.waitForTimeout(5000);
+    
+    // Проверяем структуру страницы
+    const pageInfo = await page.evaluate(() => {
+      const tables = document.querySelectorAll('table');
+      const grids = document.querySelectorAll('div[role="grid"]');
+      const gridCells = document.querySelectorAll('div[role="gridcell"]');
+      
+      const tableData = [];
+      tables.forEach((table, idx) => {
+        const rows = table.querySelectorAll('tr');
+        const cells = table.querySelectorAll('td');
+        tableData.push({
+          index: idx,
+          rows: rows.length,
+          cells: cells.length,
+          firstCellText: cells[0]?.innerText || 'N/A',
+          lastCellText: cells[cells.length - 1]?.innerText || 'N/A'
+        });
+      });
+      
+      const gridData = [];
+      gridCells.forEach((cell, idx) => {
+        if (idx < 10) { // Первые 10 ячеек
+          gridData.push({
+            index: idx,
+            text: cell.innerText,
+            role: cell.getAttribute('role')
+          });
+        }
+      });
+      
+      return {
+        title: document.title,
+        hasTables: tables.length,
+        hasGrids: grids.length,
+        hasGridCells: gridCells.length,
+        tableData: tableData,
+        gridData: gridData,
+        bodyText: document.body.innerText.substring(0, 1000)
+      };
+    });
+    
+    log(`Найдено таблиц: ${pageInfo.hasTables}`, "INFO");
+    log(`Найдено grid элементов: ${pageInfo.hasGrids}`, "INFO");
+    
+    res.status(200).json(pageInfo);
+    
+  } catch (error) {
+    log(`Ошибка в debug-reputation: ${error.message}`, "ERROR");
     res.status(500).json({ error: error.message });
   } finally {
     if (browser) await browser.close();
