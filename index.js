@@ -279,9 +279,9 @@ app.get("/check-all-domains", async (req, res) => {
   const start = parseInt(req.query.start) || 0;
   const limit = parseInt(req.query.limit) || 30; // По умолчанию 30 доменов
   
-  log("════════════════════════════════════════════════", "START");
+  log("═══════════════════════════════════════════════", "START");
   log(`Получен запрос на проверку доменов (start=${start}, limit=${limit})`, "START");
-  log("════════════════════════════════════════════════", "START");
+  log("═══════════════════════════════════════════════", "START");
   
   let browser;
   try {
@@ -335,9 +335,9 @@ app.get("/check-all-domains", async (req, res) => {
       });
     }
     
-    log("────────────────────────────────────────────────", "INFO");
+    log("───────────────────────────────────────────────", "INFO");
     log(`Начинаем проверку ${domains.length} доменов...`, "START");
-    log("────────────────────────────────────────────────", "INFO");
+    log("───────────────────────────────────────────────", "INFO");
     
     // Проверяем каждый домен
     const results = [];
@@ -351,7 +351,7 @@ app.get("/check-all-domains", async (req, res) => {
     const domainsElapsed = ((Date.now() - domainsStartTime) / 1000).toFixed(2);
     const avgTimePerDomain = (domainsElapsed / domains.length).toFixed(2);
     
-    log("────────────────────────────────────────────────", "INFO");
+    log("───────────────────────────────────────────────", "INFO");
     log(`Все домены проверены за ${domainsElapsed}s (среднее: ${avgTimePerDomain}s/домен)`, "SUCCESS");
     
     // Статистика по результатам
@@ -365,9 +365,9 @@ app.get("/check-all-domains", async (req, res) => {
     log(`Статистика: успешно=${stats.success}, без данных=${stats.noData}, ошибок=${stats.errors}`, "INFO");
     
     const totalElapsed = ((Date.now() - requestStartTime) / 1000).toFixed(2);
-    log("════════════════════════════════════════════════", "SUCCESS");
+    log("═══════════════════════════════════════════════", "SUCCESS");
     log(`Запрос завершен за ${totalElapsed}s`, "SUCCESS");
-    log("════════════════════════════════════════════════", "SUCCESS");
+    log("═══════════════════════════════════════════════", "SUCCESS");
     
     // Информация о следующем батче
     const nextStart = start + limit;
@@ -396,11 +396,11 @@ app.get("/check-all-domains", async (req, res) => {
     
   } catch (error) {
     const totalElapsed = ((Date.now() - requestStartTime) / 1000).toFixed(2);
-    log("════════════════════════════════════════════════", "ERROR");
+    log("═══════════════════════════════════════════════", "ERROR");
     log(`Критическая ошибка: ${error.message}`, "ERROR");
     log(`Stack trace: ${error.stack}`, "ERROR");
     log(`Время до ошибки: ${totalElapsed}s`, "ERROR");
-    log("════════════════════════════════════════════════", "ERROR");
+    log("═══════════════════════════════════════════════", "ERROR");
     
     res.status(500).json({ 
       error: "Internal error", 
@@ -436,7 +436,7 @@ app.get("/domains", (req, res) => {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  log("════════════════════════════════════════════════", "START");
+  log("═══════════════════════════════════════════════", "START");
   log(`Сервер запущен на порту ${PORT}`, "START");
   log(`Email аккаунта: ${GOOGLE_EMAIL}`, "INFO");
   log(`Доменов в списке: ${DOMAINS_LIST.length}`, "INFO");
@@ -451,5 +451,5 @@ app.listen(PORT, () => {
   log("  Батч 2: /check-all-domains?start=30&limit=30", "INFO");
   log("  Батч 3: /check-all-domains?start=60&limit=30", "INFO");
   log(`  Всего батчей: ${Math.ceil(DOMAINS_LIST.length / 30)}`, "INFO");
-  log("════════════════════════════════════════════════", "START");
+  log("═══════════════════════════════════════════════", "START");
 });
