@@ -174,250 +174,170 @@ function log(message, level = "INFO") {
 }
 
 // Функция логина в Google
+// Функция логина в Google (с «приклейкой» сессии к домену Postmaster)
 async function loginToGoogle(page) {
   const startTime = Date.now();
   log("Начинаем логин в Google...", "START");
-  
+
   try {
-    log("Переход на страницу авторизации Google");
-    await page.goto("https://accounts.google.com/", { 
-      waitUntil: "networkidle2", 
-      timeout: 30000 
+    await page.goto("https://accounts.google.com/", {
+      waitUntil: "networkidle2",
+      timeout: 60000
     });
-    
-    // Проверяем, не залогинены ли уже
-    const currentUrl = page.url();
-    if (currentUrl.includes("myaccount.google.com")) {
+
+    // Если уже залогинены — пропускаем
+    const url0 = page.url();
+    if (url0.includes("myaccount.google.com")) {
       log("Уже авторизованы в Google", "SUCCESS");
-      return;
-    }
-    
-    // Вводим email
-    log("Ожидание поля email...");
-    await page.waitForSelector('input[type="email"]', { timeout: 15000 });
-    log(`Ввод email: ${GOOGLE_EMAIL}`);
-    await page.type('input[type="email"]', GOOGLE_EMAIL, { delay: 150 });
-    
-    // Клик по кнопке Next
-    await page.click("#identifierNext");
-    
-    // Ждем поле пароля
-    log("Ожидание поля пароля...");
-    await page.waitForSelector('input[type="password"]', { visible: true, timeout: 15000 });
-    await page.waitForTimeout(2000);
-    
-    log("Ввод пароля...");
-    await page.type('input[type="password"]', GOOGLE_PASSWORD, { delay: 150 });
-    
-    // Клик по кнопке войти
-    await page.click("#passwordNext");
-    
-    // Ждем завершения логина
-    log("Ожидание завершения авторизации...");
-    
-    try {
-      // Ждем либо успешный логин, либо капчу/двухфакторку
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-        page.waitForSelector('input[type="tel"]', { timeout: 5000 }), // 2FA код
-        page.waitForSelector('#captchaimg', { timeout: 5000 }) // Капча
+    } else {
+      // Ввод e-mail
+      await page.waitForSelector('input[type="email"]', { timeout: 30000 });
+      await page.type('input[type="email"]', process.env.GOOGLE_EMAIL, { delay: 30 });
+      await Promise.all([
+        page.click('#identifierNext'),
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 })
       ]);
-    } catch (e) {
-      log("Возможна капча или двухфакторная аутентификация", "WARNING");
+
+      // Ввод пароля
+      await page.waitForSelector('input[type="password"]', { timeout: 30000 });
+      await page.type('input[type="password"]', process.env.GOOGLE_PASSWORD, { delay: 30 });
+      await Promise.all([
+        page.click('#passwordNext'),
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 })
+      ]);
     }
-    
-    // Дополнительное ожидание после логина
-    await page.waitForTimeout(8000);
-    
+
+    // Критично: переносим сессию на домен Postmaster и даём ему дорендериться
+    await page.goto("https://postmaster.google.com/", {
+      waitUntil: "networkidle2",
+      timeout: 60000
+    });
+
+    // Если вдруг опять видим логин — авторизуемся ещё раз уже «на этом хосте»
+    const needsSignIn = await page.evaluate(() =>
+      (document.body.innerText || "").toLowerCase().includes("sign in")
+    );
+    if (needsSignIn) {
+      log("Postmaster просит вход — повторная авторизация на этом домене…", "WARNING");
+      await page.goto("https://accounts.google.com/", {
+        waitUntil: "networkidle2",
+        timeout: 60000
+      });
+      await page.waitForSelector('input[type="email"]', { timeout: 30000 });
+      await page.type('input[type="email"]', process.env.GOOGLE_EMAIL, { delay: 30 });
+      await Promise.all([
+        page.click('#identifierNext'),
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 })
+      ]);
+
+      await page.waitForSelector('input[type="password"]', { timeout: 30000 });
+      await page.type('input[type="password"]', process.env.GOOGLE_PASSWORD, { delay: 30 });
+      await Promise.all([
+        page.click('#passwordNext'),
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 })
+      ]);
+
+      await page.goto("https://postmaster.google.com/", {
+        waitUntil: "networkidle2",
+        timeout: 60000
+      });
+    }
+
+    await page.waitForTimeout(3000); // SPA дорисовывает интерфейс
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     log(`Логин успешен (${elapsed}s)`, "SUCCESS");
-    
   } catch (error) {
     log(`Ошибка при логине: ${error.message}`, "ERROR");
-    
-    // Делаем скриншот для диагностики
-    try {
-      await page.screenshot({ path: '/tmp/login_error.png', fullPage: true });
-      log("Скриншот сохранен в /tmp/login_error.png", "INFO");
-    } catch (e) {
-      log("Не удалось сделать скриншот", "WARNING");
-    }
-    
     throw error;
   }
 }
 
+
 // Функция получения репутации для одного домена
+// Функция проверки репутации домена (shadow-DOM deep search + защита от re-login)
 async function getDomainReputation(page, domain, index, total) {
   const startTime = Date.now();
-  
+
   try {
     log(`[${index + 1}/${total}] Проверяем домен: ${domain}`, "PROCESS");
-    
+
     const url = `https://postmaster.google.com/dashboards#do=${domain}&st=domainReputation&dr=7`;
-    log(`[${index + 1}/${total}] Переход на страницу репутации...`);
-    
-    await page.goto(url, { 
-      waitUntil: "networkidle2", 
-      timeout: 30000 
-    });
-    
-    // Ждем появления контейнера с графиком или таблицей
-    log(`[${index + 1}/${total}] Ожидание загрузки данных (10 сек)...`);
-    
-    // Пробуем дождаться появления таблицы
-    let tableFound = false;
-    for (let i = 0; i < 10; i++) {
-      await page.waitForTimeout(1000);
-      
-      const hasTable = await page.evaluate(() => {
-        const tables = document.querySelectorAll('table');
-        for (const table of tables) {
-          const rows = table.querySelectorAll('tbody tr');
-          if (rows.length > 0) {
-            return true;
-          }
-        }
-        return false;
-      });
-      
-      if (hasTable) {
-        tableFound = true;
-        log(`[${index + 1}/${total}] Таблица найдена после ${i + 1} сек`);
-        break;
-      }
+    log(`[${index + 1}/${total}] Переход на страницу репутации…`);
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+
+    // Если опять кинуло на логин — логинимся и повторяем переход
+    const onLoginPage = await page.evaluate(() =>
+      (document.body.innerText || "").toLowerCase().includes("sign in")
+    );
+    if (onLoginPage) {
+      log(`[${index + 1}/${total}] Обнаружена страница логина — повторная авторизация…`, "WARNING");
+      await loginToGoogle(page);
+      await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
     }
-    
-    if (!tableFound) {
-      log(`[${index + 1}/${total}] Таблица не найдена после 10 сек ожидания`);
-    }
-    
-    // Еще немного ждем для стабильности
-    await page.waitForTimeout(2000);
-    
-    log(`[${index + 1}/${total}] Парсинг данных...`);
-    
-    // Проверяем наличие данных и получаем репутацию
+
+    // Ждём рендер SPA (networkidle2 для Postmaster часто «ранний»)
+    await page.waitForTimeout(5000);
+
+    // Универсальный глубокий обход DOM + shadowRoot
     const result = await page.evaluate(() => {
-      console.log('Starting evaluation...');
-      
-      // Функция для получения текста из элемента
-      function getText(element) {
-        if (!element) return null;
-        const text = (element.innerText || element.textContent || '').trim();
-        console.log('getText:', text);
-        return text;
-      }
-      
-      // Сначала проверяем, есть ли сообщение "No data to display"
-      const allDivs = document.querySelectorAll('div');
-      for (const div of allDivs) {
-        const text = getText(div);
-        if (text && text.toLowerCase() === 'no data to display') {
-          console.log('Found "No data to display"');
-          return { hasData: false, reputation: null, debug: 'No data message found' };
+      const REPS = ["High", "Medium", "Low", "Bad", "Высокая", "Средняя", "Низкая", "Плохая"];
+
+      function* deepWalk(root) {
+        if (!root) return;
+        yield root;
+        const kids = root.children ? Array.from(root.children) : [];
+        for (const el of kids) {
+          yield* deepWalk(el);
+          if (el.shadowRoot) yield* deepWalk(el.shadowRoot);
         }
-      }
-      
-      // Ищем все таблицы на странице
-      const tables = document.querySelectorAll('table');
-      console.log('Found tables:', tables.length);
-      
-      // Массив возможных значений репутации
-      const reputationValues = ['Высокая', 'Средняя', 'Низкая', 'Плохая', 'High', 'Medium', 'Low', 'Bad'];
-      
-      for (let tableIndex = 0; tableIndex < tables.length; tableIndex++) {
-        const table = tables[tableIndex];
-        console.log(`Checking table ${tableIndex}...`);
-        
-        // Ищем все строки в tbody
-        const rows = table.querySelectorAll('tbody tr');
-        console.log(`Table ${tableIndex} has ${rows.length} rows`);
-        
-        if (rows.length > 0) {
-          // Проверяем первую строку
-          const firstRow = rows[0];
-          const cells = firstRow.querySelectorAll('td');
-          console.log(`First row has ${cells.length} cells`);
-          
-          // Проверяем каждую ячейку
-          for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
-            const cellText = getText(cells[cellIndex]);
-            console.log(`Cell ${cellIndex}: "${cellText}"`);
-            
-            // Проверяем, является ли это значением репутации
-            if (cellText && reputationValues.includes(cellText)) {
-              console.log(`Found reputation: ${cellText}`);
-              return { 
-                hasData: true, 
-                reputation: cellText,
-                debug: `Found in table ${tableIndex}, cell ${cellIndex}`
-              };
-            }
-          }
-          
-          // Если репутация не найдена по значениям, берем последнюю ячейку
-          // (но проверяем что это не дата)
-          if (cells.length >= 2) {
-            const lastCell = cells[cells.length - 1];
-            const lastCellText = getText(lastCell);
-            if (lastCellText && 
-                !lastCellText.includes('20') && // не год
-                !lastCellText.includes('окт') && 
-                !lastCellText.includes('Oct') &&
-                !lastCellText.includes(':')) { // не время
-              console.log(`Using last cell as reputation: ${lastCellText}`);
-              return { 
-                hasData: true, 
-                reputation: lastCellText,
-                debug: `Last cell of table ${tableIndex}`
-              };
-            }
+        if (root.shadowRoot && root.shadowRoot.children) {
+          for (const el of Array.from(root.shadowRoot.children)) {
+            yield* deepWalk(el);
           }
         }
       }
-      
-      console.log('No reputation found in tables');
-      
-      // Альтернативный поиск через все td элементы
-      const allCells = document.querySelectorAll('td');
-      console.log(`Checking all ${allCells.length} td elements...`);
-      
-      for (const cell of allCells) {
-        const cellText = getText(cell);
-        if (cellText && reputationValues.includes(cellText)) {
-          console.log(`Found reputation in td: ${cellText}`);
-          return { 
-            hasData: true, 
-            reputation: cellText,
-            debug: 'Found in standalone td'
-          };
+
+      // Быстрая проверка на «нет данных»
+      const t0 = (document.body.innerText || "").toLowerCase();
+      if (t0.includes("no data")) {
+        return { hasData: false, reputation: null, debug: "No data label on page" };
+      }
+
+      // Ищем бейдж/слово репутации
+      for (const node of deepWalk(document)) {
+        const txt = (node && node.innerText ? node.innerText : "").trim();
+        if (!txt) continue;
+        const words = txt.split(/\s+/);
+        for (const r of REPS) {
+          if (txt === r || words.includes(r)) {
+            return { hasData: true, reputation: r, debug: "shadowDOM match" };
+          }
         }
       }
-      
-      console.log('No reputation found anywhere');
-      // Если ничего не нашли
-      return { hasData: false, reputation: null, debug: 'No reputation found' };
+
+      return { hasData: false, reputation: null, debug: "not found in shadowDOM" };
     });
-    
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-    
     log(`[${index + 1}/${total}] Результат: ${JSON.stringify(result)}`);
-    
+
     if (!result.hasData || !result.reputation) {
-      log(`[${index + 1}/${total}] ${domain}: Нет данных (${elapsed}s) - ${result.debug}`, "WARNING");
+      log(
+        `[${index + 1}/${total}] ${domain}: Нет данных (${elapsed}s) - ${result.debug}`,
+        "WARNING"
+      );
       return { domain, reputation: "No Data" };
     }
-    
+
     log(`[${index + 1}/${total}] ${domain}: ${result.reputation} (${elapsed}s)`, "SUCCESS");
     return { domain, reputation: result.reputation };
-    
   } catch (error) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     log(`[${index + 1}/${total}] ${domain}: Ошибка - ${error.message} (${elapsed}s)`, "ERROR");
     return { domain, reputation: "Error", error: error.message };
   }
 }
+
 
 // Главный endpoint
 app.get("/check-all-domains", async (req, res) => {
@@ -456,6 +376,7 @@ app.get("/check-all-domains", async (req, res) => {
     log(`Браузер запущен (${browserElapsed}s)`, "SUCCESS");
     
     const page = await browser.newPage();
+    await page.setBypassCSP(true);
     
     // Перехватываем console.log из браузера для отладки
     page.on('console', msg => {
@@ -635,6 +556,7 @@ app.get("/test-domain/:domain", async (req, res) => {
     });
     
     const page = await browser.newPage();
+    await page.setBypassCSP(true);
     
     // Перехватываем console.log из браузера
     page.on('console', msg => {
@@ -696,6 +618,7 @@ app.get("/debug-domain/:domain", async (req, res) => {
     });
     
     const page = await browser.newPage();
+    await page.setBypassCSP(true);
     await page.setViewport({ width: 1920, height: 1080 });
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
